@@ -1,0 +1,132 @@
+---
+title: "Assignment 1: Food Delivery Time Analysis"
+author: "Daniel Drasler"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## Data Source
+
+**Food Delivery Time Prediction Data set** — 50,000 simulated food delivery
+orders with 24 variables.
+
+## 1. Import the Dataset
+
+```{r import}
+delivery <- read.csv("Food_Delivery_Time_Prediction.csv")
+str(delivery)
+```
+
+The dataset contains 50,000 rows and 24 columns, with no missing values in
+any column. It includes both quantitative variables (delivery time, road
+distance, preparation time) and categorical variables (weather, traffic
+level, vehicle type).
+
+## 2. Descriptive Statistics — Quantitative Variables
+
+Three quantitative variables were selected: delivery time, road distance,
+and preparation time.
+
+```{r desc-quant}
+summary(delivery[, c("Time_taken_min", "Road_Distance_km", "Preparation_Time_Min")])
+```
+
+Delivery time averages roughly 84 minutes with a median around 78. The mean
+sitting above the median suggests the distribution is right-skewed, which is
+confirmed in the histogram below.
+
+## 3. Descriptive Statistics — Categorical Variables
+
+Two categorical variables were selected: traffic level and weather.
+
+```{r desc-cat}
+table(delivery$Traffic_Level)
+table(delivery$Weather)
+
+# As percentages
+round(100 * prop.table(table(delivery$Traffic_Level)), 1)
+```
+
+Most deliveries occur under low-to-moderate traffic and clear weather, with
+"Severe" traffic and "Storm" conditions being comparatively rare categories.
+
+A useful cross-check is comparing the quantitative variable across these
+categorical groups:
+
+```{r desc-cross}
+round(tapply(delivery$Time_taken_min, delivery$Traffic_Level, mean), 1)
+```
+
+Average delivery time rises steadily with traffic level, from roughly 76
+minutes under low traffic to over 130 minutes under severe traffic.
+
+## 4. Variable Transformations
+
+**Transformation 1 — log transform (quantitative).** Delivery time is
+right-skewed, so a natural-log transformation was applied to compress the
+long upper tail.
+
+```{r transform-log}
+delivery$log_time <- log(delivery$Time_taken_min)
+head(delivery[, c("Time_taken_min", "log_time")])
+```
+
+**Transformation 2 — level collapsing (categorical).** The five-level
+`Weather` variable was collapsed into a simpler two-level indicator of
+adverse versus clear conditions.
+
+```{r transform-cat}
+delivery$adverse_weather <- factor(
+  ifelse(delivery$Weather %in% c("Rain", "Storm", "Fog"), "Adverse", "Clear/Cloudy")
+)
+table(delivery$adverse_weather)
+```
+
+About 30% of deliveries (14,923 of 50,000) occurred in adverse weather.
+
+## 5. Plots
+
+**Histogram of a quantitative variable.**
+
+```{r plot-hist, fig.width=7, fig.height=5}
+hist(delivery$Time_taken_min,
+     main = "Distribution of Delivery Time",
+     xlab = "Delivery time (minutes)",
+     col  = "steelblue")
+```
+
+The histogram confirms the right skew noted earlier: most deliveries cluster
+between roughly 60 and 90 minutes, with a tail extending out toward the
+180-minute ceiling.
+
+**Scatterplot.**
+
+```{r plot-scatter, fig.width=7, fig.height=5}
+plot(delivery$Road_Distance_km, delivery$Time_taken_min,
+     main = "Delivery Time vs. Road Distance",
+     xlab = "Road distance (km)",
+     ylab = "Delivery time (minutes)",
+     pch  = 19,
+     col  = rgb(0.2, 0.4, 0.7, 0.2))
+```
+
+There is a clear positive relationship between road distance and delivery
+time.. Farther deliveries take longer, as expected. The flat band of points
+along the top of the plot (delivery time capped near 180 minutes) is visible
+here as well. Overall, it reflects a ceiling in how the data was generated rather than a naturally occurring pattern in delivery logistics.
+
+## Summary
+
+This analysis imported a 50,000-row food delivery data set, summarized three
+quantitative and two categorical variables, applied a numeric (log) and a
+categorical (level-collapsing) transformation, and produced a histogram and
+a scatter plot. The clearest finding is that both traffic level and distance
+are strongly associated with delivery time, while the 180-minute cap in the
+data is a generation artifact worth noting rather than a real-world limit.
