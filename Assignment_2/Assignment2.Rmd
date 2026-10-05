@@ -1,0 +1,165 @@
+---
+title: "Universal Bank: k-NN Classification"
+author: "Daniel Drasler"
+date: "October 4, 2026"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r}
+library(class)
+library(caret)
+```
+
+## Data Preparation
+
+ID and ZIP Code are removed since they aren't used as predictors. Education has 3 categories, so I split it into 3 dummy variables.
+
+```{r}
+bank <- read.csv("UniversalBank.csv")
+
+# remove ID and ZIP Code
+bank$ID <- NULL
+bank$ZIP.Code <- NULL
+
+# dummy variables for Education
+bank$Education_1 <- ifelse(bank$Education == 1, 1, 0)
+bank$Education_2 <- ifelse(bank$Education == 2, 1, 0)
+bank$Education_3 <- ifelse(bank$Education == 3, 1, 0)
+bank$Education <- NULL
+
+bank$Personal.Loan <- as.factor(bank$Personal.Loan)
+
+predictors <- c("Age", "Experience", "Income", "Family", "CCAvg", "Mortgage",
+                "Securities.Account", "CD.Account", "Online", "CreditCard",
+                "Education_1", "Education_2", "Education_3")
+```
+
+## Partition and Normalization (60% / 40%)
+
+Since k-NN uses distance, the data needs to be normalized first. Otherwise a variable like Income would matter way more than a 0/1 variable like Online. I normalized using the training data only and then applied it to the validation data and the new customer.
+
+```{r}
+set.seed(1)
+train_index <- sample(row.names(bank), 0.6 * nrow(bank))
+valid_index <- setdiff(row.names(bank), train_index)
+train_df <- bank[train_index, ]
+valid_df <- bank[valid_index, ]
+
+norm_values <- preProcess(train_df[, predictors], method = c("center", "scale"))
+train_norm <- predict(norm_values, train_df[, predictors])
+valid_norm <- predict(norm_values, valid_df[, predictors])
+
+new_customer <- data.frame(Age = 40, Experience = 10, Income = 84, Family = 2,
+                           CCAvg = 2, Mortgage = 0, Securities.Account = 0,
+                           CD.Account = 0, Online = 1, CreditCard = 1,
+                           Education_1 = 0, Education_2 = 1, Education_3 = 0)
+new_norm <- predict(norm_values, new_customer)
+```
+
+## Question 1
+
+Perform a k-NN classification with all predictors except ID and ZIP code using k = 1. How would this customer be classified?
+
+```{r}
+knn_1 <- knn(train = train_norm, test = new_norm, cl = train_df$Personal.Loan, k = 1)
+knn_1
+```
+
+With k = 1, the customer is classified as 0, so they would not accept the personal loan offer.
+
+## Question 2
+
+What is a choice of k that balances between overfitting and ignoring the predictor information?
+
+```{r}
+# try k = 1 to 15 and check accuracy on the validation set
+accuracy_df <- data.frame(k = 1:15, accuracy = 0)
+
+for (i in 1:15) {
+  knn_pred <- knn(train = train_norm, test = valid_norm,
+                  cl = train_df$Personal.Loan, k = i)
+  accuracy_df$accuracy[i] <- confusionMatrix(knn_pred, valid_df$Personal.Loan,
+                                             positive = "1")$overall[1]
+}
+
+accuracy_df
+plot(accuracy_df$k, accuracy_df$accuracy, type = "b", xlab = "k", ylab = "Accuracy")
+```
+
+The best k is 3, with a validation accuracy of 96.4%. A small k like 1 only looks at one neighbor, so it follows the training data too closely and picks up noise (overfitting). A really large k averages over so many neighbors that it starts ignoring the predictors and just predicts the majority class (no loan). Accuracy mostly drops off as k gets bigger, so k = 3 is a good balance.
+
+## Question 3
+
+Show the confusion matrix for the validation data that results from using the best k.
+
+```{r}
+knn_3 <- knn(train = train_norm, test = valid_norm, cl = train_df$Personal.Loan, k = 3)
+confusionMatrix(knn_3, valid_df$Personal.Loan, positive = "1")
+```
+
+The model is 96.4% accurate on the validation data. Sensitivity is 69.27%, which is the share of customers who actually accepted the loan that the model caught, and specificity is 99.5%. The model is much better at identifying customers who will decline than those who will accept, which is expected since only around 9.6% of customers accepted.
+
+## Question 4
+
+Classify the same customer using the best k.
+
+```{r}
+knn_best <- knn(train = train_norm, test = new_norm, cl = train_df$Personal.Loan, k = 3)
+knn_best
+```
+
+Using k = 3, the customer is classified as 0, so they would not accept the personal loan offer.
+
+## Question 5
+
+Repartition the data into training, validation, and test sets (50% : 30% : 20%). Apply k-NN with the k chosen above and compare the confusion matrices.
+
+```{r}
+set.seed(1)
+train_index2 <- sample(row.names(bank), 0.5 * nrow(bank))
+remaining <- setdiff(row.names(bank), train_index2)
+valid_index2 <- sample(remaining, 0.3 * nrow(bank))
+test_index2 <- setdiff(remaining, valid_index2)
+
+train_df2 <- bank[train_index2, ]
+valid_df2 <- bank[valid_index2, ]
+test_df2 <- bank[test_index2, ]
+
+# normalize with the new training set
+norm_values2 <- preProcess(train_df2[, predictors], method = c("center", "scale"))
+train_norm2 <- predict(norm_values2, train_df2[, predictors])
+valid_norm2 <- predict(norm_values2, valid_df2[, predictors])
+test_norm2 <- predict(norm_values2, test_df2[, predictors])
+
+train_pred <- knn(train = train_norm2, test = train_norm2, cl = train_df2$Personal.Loan, k = 3)
+valid_pred <- knn(train = train_norm2, test = valid_norm2, cl = train_df2$Personal.Loan, k = 3)
+test_pred <- knn(train = train_norm2, test = test_norm2, cl = train_df2$Personal.Loan, k = 3)
+```
+
+Training set:
+
+```{r}
+confusionMatrix(train_pred, train_df2$Personal.Loan, positive = "1")
+```
+
+Validation set:
+
+```{r}
+confusionMatrix(valid_pred, valid_df2$Personal.Loan, positive = "1")
+```
+
+Test set:
+
+```{r}
+confusionMatrix(test_pred, test_df2$Personal.Loan, positive = "1")
+```
+
+The training set performs best (97.64% accuracy), followed by the validation set (96.8% accuracy), and the test set (96.1%).
+
+The training results are inflated because each training record is classified using a data set that includes itself. Its own record is always its nearest neighbor, so it basically votes for its own correct class. The validation set is new data, but it was used to choose k, so its results are still a little favored. The test set wasn't used to build or tune the model at all, so it gives the most honest estimate of how the model will do on new customers.
+
+The differences between the three sets are small, which suggests the model is not terribly overfit. Across all three sets the sensitivity is much lower than specificity, so the model misses a good number of customers who would accept a loan. That is what ultimately matters for the bank, since those are the customers the campaign is trying to reach.
